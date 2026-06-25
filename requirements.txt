@@ -1,0 +1,11 @@
+google-cloud-bigquery
+google-cloud-storage
+pandas
+python-dotenv
+prefect
+streamlit
+lightgbm
+shap
+scikit-learn
+db-dtypes
+pyarrow
