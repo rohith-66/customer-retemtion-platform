@@ -1,14 +1,17 @@
 import os
-import decimal
+import json
 import streamlit as st
 import pandas as pd
 from google.cloud import bigquery
 from dotenv import load_dotenv
 
 load_dotenv()
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-PROJECT = os.getenv("GCP_PROJECT_ID")
+# Local: uses gcp-key.json. Cloud Run: uses attached service account automatically.
+if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+PROJECT = os.getenv("GCP_PROJECT_ID", "customer-retention-platform")
 GOLD = f"{PROJECT}.dbt_dev_gold"
 
 st.set_page_config(
@@ -42,15 +45,16 @@ st.markdown("""
 def run_query(query):
     client = bigquery.Client(project=PROJECT)
     df = client.query(query).to_dataframe()
-    for col in df.select_dtypes(include="object").columns:
-        sample = df[col].dropna()
-        if not sample.empty and isinstance(sample.iloc[0], decimal.Decimal):
+    for col in df.select_dtypes(include='object').columns:
+        try:
+            converted = pd.to_numeric(df[col], errors='coerce')
+            if converted.notna().sum() > 0:
+                df[col] = converted
+        except:
+            pass
+    for col in df.columns:
+        if hasattr(df[col], 'dtype') and str(df[col].dtype) in ['decimal128(38, 9)[pyarrow]', 'double[pyarrow]', 'float64[pyarrow]']:
             df[col] = df[col].astype(float)
-        else:
-            try:
-                df[col] = pd.to_numeric(df[col])
-            except (ValueError, TypeError):
-                pass
     return df
 
 
@@ -68,7 +72,7 @@ with st.sidebar:
     st.caption("Refresh interval: 5 minutes")
 
 
-# ── Page 1: Revenue Health ─────────────────────────────────────────────────────
+# ── Page 1: Revenue Health -
 if page == "Revenue Health":
     st.title("Revenue Health")
     st.caption("Monthly recurring revenue breakdown, churn revenue impact, and ARR projection.")
@@ -132,7 +136,7 @@ if page == "Revenue Health":
     )
 
 
-# ── Page 2: Churn Intelligence ─────────────────────────────────────────────────
+# ── Page 2: Churn Intelligence -
 elif page == "Churn Intelligence":
     st.title("Churn Intelligence")
     st.caption("Churn rate segmented by contract, tenure, internet service, and payment method.")
@@ -253,7 +257,7 @@ elif page == "Churn Intelligence":
     )
 
 
-# ── Page 3: At-Risk Customers ──────────────────────────────────────────────────
+# ── Page 3: At-Risk Customers -─
 elif page == "At-Risk Customers":
     st.title("At-Risk Customers")
     st.caption("Active customers ranked by churn risk score. Scoring uses contract type, tenure, service profile, and spend signals.")
@@ -339,7 +343,7 @@ elif page == "At-Risk Customers":
         st.bar_chart(data=risk_by_contract, x="contract_type", y="risk_score", height=250)
 
 
-# ── Page 4: Cohort Retention ───────────────────────────────────────────────────
+# ── Page 4: Cohort Retention -──
 elif page == "Cohort Retention":
     st.title("Cohort Retention")
     st.caption("Retention rates by customer tenure cohort and contract type.")
